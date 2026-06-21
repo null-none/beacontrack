@@ -1,11 +1,13 @@
 const BeaconTrack = {
-  endpoint: null,
+  endpoints: [],
   defaultEvents: ["click"],
   events: [],
   _lastSent: {},
 
   init(options = {}) {
-    this.endpoint = options.endpoint || "/api/v1/stats/track/";
+    const ep = options.endpoint || "/api/v1/stats/track/";
+    this.endpoints = Array.isArray(ep) ? ep : [ep];
+
     this.events = options.events
       ? [...this.defaultEvents, ...options.events]
       : [...this.defaultEvents];
@@ -15,11 +17,13 @@ const BeaconTrack = {
     this._bindPreInit();
   },
 
-  track(key, value = null) {
+  track(key, value = null, apiIndex = 0) {
     const now = Date.now();
-    if (this._lastSent[key] && now - this._lastSent[key] < 300) return;
-    this._lastSent[key] = now;
+    const dedupeKey = `${apiIndex}:${key}`;
+    if (this._lastSent[dedupeKey] && now - this._lastSent[dedupeKey] < 300) return;
+    this._lastSent[dedupeKey] = now;
 
+    const endpoint = this.endpoints[apiIndex] ?? this.endpoints[0];
     const payload = { event: key };
     if (value !== null) payload.value = value;
 
@@ -28,9 +32,9 @@ const BeaconTrack = {
     });
 
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(this.endpoint, blob);
+      navigator.sendBeacon(endpoint, blob);
     } else {
-      fetch(this.endpoint, { method: "POST", body: blob, keepalive: true });
+      fetch(endpoint, { method: "POST", body: blob, keepalive: true });
     }
   },
 
@@ -38,6 +42,7 @@ const BeaconTrack = {
     return {
       key: el.dataset.track,
       value: el.dataset.trackValue || null,
+      apiIndex: parseInt(el.dataset.api ?? "0", 10),
     };
   },
 
@@ -45,8 +50,8 @@ const BeaconTrack = {
     document.addEventListener("click", (e) => {
       const el = e.target.closest("[data-track]:not([data-track-on])");
       if (!el) return;
-      const { key, value } = this._getTrackData(el);
-      this.track(key, value);
+      const { key, value, apiIndex } = this._getTrackData(el);
+      this.track(key, value, apiIndex);
     });
   },
 
@@ -54,15 +59,16 @@ const BeaconTrack = {
     document.addEventListener(eventName, (e) => {
       const el = e.target.closest(`[data-track-on="${eventName}"]`);
       if (!el) return;
-      const { key, value } = this._getTrackData(el);
-      this.track(key, value);
+      const { key, value, apiIndex } = this._getTrackData(el);
+      this.track(key, value, apiIndex);
     });
   },
 
   _bindPreInit() {
     document.querySelectorAll("[data-track-init]").forEach((el) => {
       const value = el.dataset.trackInitValue || null;
-      this.track(el.dataset.trackInit, value);
+      const apiIndex = parseInt(el.dataset.api ?? "0", 10);
+      this.track(el.dataset.trackInit, value, apiIndex);
     });
   },
 };
